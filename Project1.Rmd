@@ -1,0 +1,138 @@
+---
+title: "Week4-Project1"
+author: "Simon63"
+date: "February 24, 2018"
+output: html_document
+params:
+  csv_file: enter the path for the output file.csv
+---
+
+###**NOTE**: Choose Knit with Parameters...
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libraries
+```{r libraries, warning=FALSE, message=FALSE}
+library(RCurl)
+library(magrittr)
+library(stringr)
+```
+
+###Load lines from the source text file
+```{r load_data}
+elo <- readLines('https://raw.githubusercontent.com/simon63/Project1/master/tournamentinfo.txt', warn = F);
+head(elo, 10);
+```
+
+###Remove 3 lines of the Header
+```{r rem_header}
+elo <- elo[-c(1:3)]
+head(elo, n = 10)
+```
+
+###Remove Row-Separator lines
+```{r rem_separators}
+elo <- subset(elo, str_detect(elo, '^[^-+$]'));
+head(elo)
+```
+
+###Divide lines into two sets of rows
+#####separating odd and even rows into two sets
+```{r divide_data}
+row1 <- elo[(c(1:length(elo)) %% 2) != 0]
+row2 <- elo[(c(1:length(elo)) %% 2) == 0]
+message('first set of rows')
+head(row1)
+message('second set of rows')
+head(row2)
+```
+
+###Read both sets of rows into two data frame objects
+#####and drop the last empty column from the data frames
+```{r create_dataframes}
+df1 <- read.csv(sep = '|', header = F, text = row1, stringsAsFactors = F)
+df2 <- read.csv(sep = '|', header = F, text = row2, stringsAsFactors = F)
+# drop the last empty column
+df1 <- df1[-11]
+df2 <- df2[-11]
+knitr::kable(
+  head(df1),
+  caption = "first data frame"
+)
+knitr::kable(
+  head(df2),
+  caption = "second data frame"
+)
+```
+
+###Extract Opponents' ID values {V4-V10 columns of Data.Frame#1} and convert to numeric
+```{r get_ids}
+df1$V4 <- df1$V4 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V5 <- df1$V5 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V6 <- df1$V6 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V7 <- df1$V7 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V8 <- df1$V8 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V9 <- df1$V9 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+df1$V10 <- df1$V10 %>% str_sub(2, -1) %>% str_trim(side = "both") %>% type.convert
+message("data.frame#1 with opponents's ID")
+head(df1)
+```
+
+###Create a function to calculate *"Average of Pre-Chess Rating of Opponents"*
+The function takes in, as parameters, a vector of IDs and the two data frames.
+For each ID it picks up the corresponding opponents' IDs (from data.frame#1 omitting NAs)
+and looks up the Pre-Chess Rating column (V2) from the corresponding data rows in data.frame#2.
+It then creates a pipeline to extract the ratings, convert them to numerics and find the average value
+```{r avg_func}
+
+f_avg <- function (v, d1, d2) {
+  result <- vector(mode = "double", length = length(v))
+  for (i in 1:length(result)) {
+    result[i] <- na.omit(d2[unlist(d1[v[i], c(4:10)]),]$V2) %>%
+      str_extract_all('R:\\s+\\d+') %>% 
+        str_extract('\\d+') %>%
+          type.convert %>% 
+            mean() %>% 
+              round()
+  }
+  return(result)
+}
+
+message("Function test result for Player #1:")
+f_avg(c(1), df1, df2)
+message("Pre-Chess Rating of Opponents for Player #1:")
+na.omit(df2[unlist(df1[1, c(4:10)]), 2]) %>% str_view_all('R:\\s+\\d+')
+
+message("Function test result for Player #37:")
+f_avg(c(37), df1, df2)
+message("Pre-Chess Rating of Opponents for Player #37:")
+na.omit(df2[unlist(df1[37, c(4:10)]), 2]) %>% str_view_all('R:\\s+\\d+')
+```
+
+###Build the final data.frame object which will be used to generate a .CSV file
+The .CSV file (that could for example be imported into a SQL database) should have the following information for all of the players:  
+* Player's Name  
+* Player's State  
+* Total Number of Points  
+* Player's Pre-Rating  
+* Average Pre Chess Rating of Opponents  
+```{r final_dataframe}
+dfResult = data.frame(
+  plyr_name = df1$V2 %>% str_trim(side = "both"),
+  plyr_state = df2$V1 %>% str_trim(side = "both"),
+  plyr_total_pts = df1$V3,
+  plyr_pre_rating = df2$V2 %>% str_extract_all('R:\\s+\\d+') %>% str_extract('\\d+') %>% type.convert,
+  plyr_oppt_avg_pre_rating = f_avg(c(1:dim(df1)[[1]]), df1, df2)
+)
+knitr::kable(
+  head(dfResult),
+  caption = "Resulting Data Frame"
+)
+```
+
+###Write out the final required .CSV ouput file for this project
+```{r csv_file}
+write.csv(dfResult, file = params$csv_file)
+```
